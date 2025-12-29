@@ -4,36 +4,36 @@ out vec4 FragColor;
 in vec3 FragPos;
 in vec3 Normal;
 in vec2 TexCoords;
-in vec3 ObjectColor;
+in vec3 FaceColor;
 
 uniform sampler2D texture1;
-uniform vec3 lightPos;
-uniform vec3 viewPos;
+uniform vec3 lightPos; // Pozicija sunca
+uniform vec3 viewPos;  // Pozicija kamere
 
-void main()
-{
-    // 1. Ambient (Osnovno svetlo)
-    float ambientStrength = 0.3;
-    vec3 ambient = ambientStrength * vec3(1.0, 1.0, 1.0);
+void main() {
+    vec3 lightColor = vec3(1.0, 0.95, 0.9);
 
-    // 2. Diffuse (Svetlo koje pada pod uglom)
+
+    float ambientStrength = 0.4;
+    vec3 ambient = ambientStrength * lightColor;
+
     vec3 norm = normalize(Normal);
-    vec3 lightDir = normalize(lightPos - FragPos);
+
+    vec3 lightDir = normalize(lightPos - vec3(0.0, 0.0, 0.0));
     float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = diff * vec3(1.0, 1.0, 1.0);
+    vec3 diffuse = diff * lightColor;
 
-    // 3. Specular (Odsjaj plastike)
-    float specularStrength = 0.8;
+
+    float specularStrength = 0.5;
     vec3 viewDir = normalize(viewPos - FragPos);
-    vec3 reflectDir = reflect(-lightDir, norm);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64); // 64 je shininess
-    vec3 specular = specularStrength * spec * vec3(1.0, 1.0, 1.0);
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(norm, halfwayDir), 0.0), 64.0);
+    vec3 specular = specularStrength * spec * lightColor;
 
-    // Miksamo teksturu (blago vidljiva) sa bojom kocke
-    // Ako ne zelis teksturu, obrisi "* vec3(texColor)"
+
     vec4 texColor = texture(texture1, TexCoords);
+    vec3 objectColor = texColor.rgb * FaceColor;
 
-    // Konacna boja
-    vec3 result = (ambient + diffuse + specular) * ObjectColor * vec3(texColor);
+    vec3 result = (ambient + diffuse + specular) * objectColor;
     FragColor = vec4(result, 1.0);
 }

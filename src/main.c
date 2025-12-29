@@ -13,6 +13,13 @@
 const unsigned int SCR_WIDTH = 1024;
 const unsigned int SCR_HEIGHT = 768;
 
+// --- GLOBALNE PROMENLJIVE ZA UI I STANJE IGRE ---
+double start_time = 0.0;
+double current_time = 0.0;
+double final_time = 0.0;
+int game_state = 0; // 0 = IDLE (Solved), 1 = SHUFFLING, 2 = PLAYING, 3 = SOLVING
+int total_moves = 0;
+
 // --- POMOCNE FUNKCIJE ZA FAJLOVE ---
 
 char* readFile(const char* path) {
@@ -184,16 +191,34 @@ void rotate_layer_fixed(char axis, int layer, float angle) {
 
 void trigger(char ax, int l, float d, int rec) {
     animating=1; anim_axis=ax; anim_layer=l; anim_dir=d; anim_angle=0;
-    if(rec && history_count<2000) { history[history_count++] = (Move){ax, l, d}; }
+    if(rec && history_count<2000) {
+        history[history_count++] = (Move){ax, l, d};
+        // Ako igramo, ovo je potez vise
+        if(game_state == 2) total_moves++;
+    }
 }
 
 void key_cb(GLFWwindow* w, int k, int s, int a, int m) {
     if(a!=GLFW_PRESS || animating) return;
+
+    // Kontrole za okretanje
     if(k==GLFW_KEY_U) trigger('y', 1, -1, 1); if(k==GLFW_KEY_D) trigger('y', -1, 1, 1);
     if(k==GLFW_KEY_L) trigger('x', -1, 1, 1); if(k==GLFW_KEY_R) trigger('x', 1, -1, 1);
     if(k==GLFW_KEY_F) trigger('z', 1, -1, 1); if(k==GLFW_KEY_B) trigger('z', -1, 1, 1);
-    if(k==GLFW_KEY_S && !shuffling) { shuffling=1; shuffle_moves=20; }
-    if(k==GLFW_KEY_SPACE && history_count>0) solving=1;
+
+    // Shuffle (S)
+    if(k==GLFW_KEY_S && !shuffling && !solving) {
+        shuffling=1;
+        shuffle_moves=20;
+        game_state = 1; // SHUFFLING
+        total_moves = 0;
+    }
+
+    // Solve (SPACE)
+    if(k==GLFW_KEY_SPACE && history_count>0 && !shuffling) {
+        solving=1;
+        game_state = 3; // SOLVING
+    }
 }
 
 void mouse_cb(GLFWwindow* w, double x, double y) {
@@ -205,7 +230,7 @@ void mouse_cb(GLFWwindow* w, double x, double y) {
     } else first_mouse=1;
 }
 
-// --- SKYBOX SHADERI (Stringovi) ---
+// --- SKYBOX SHADERI ---
 const char* skyboxVertSrc = "#version 330 core\n"
     "layout (location = 0) in vec3 aPos;\n"
     "out vec3 TexCoords;\n"
@@ -225,6 +250,31 @@ const char* skyboxFragSrc = "#version 330 core\n"
     "    FragColor = texture(skybox, TexCoords);\n"
     "}\n\0";
 
+// --- FUNKCIJA ZA AZURIRANJE UI (TITLE BAR) ---
+void updateTitle(GLFWwindow* window) {
+    char title[256];
+    double t = 0.0;
+
+    if (game_state == 2) { // PLAYING
+        t = glfwGetTime() - start_time;
+    } else if (game_state == 0 && final_time > 0) { // SOLVED
+        t = final_time;
+    }
+
+    int minutes = (int)t / 60;
+    double seconds = t - (minutes * 60);
+
+    char* stateStr = "IDLE";
+    if(game_state == 1) stateStr = "SHUFFLING...";
+    if(game_state == 2) stateStr = "PLAYING";
+    if(game_state == 3) stateStr = "AUTO-SOLVING";
+    if(game_state == 0 && history_count == 0 && total_moves > 0) stateStr = "SOLVED!";
+
+    sprintf(title, "Rubik's Cube | Status: %s | Time: %02d:%05.2f | Moves to Solve: %d | [S] Shuffle [Space] Solve",
+            stateStr, minutes, seconds, history_count);
+
+    glfwSetWindowTitle(window, title);
+}
 
 int main() {
     srand(time(NULL)); init_cubes();
@@ -319,6 +369,7 @@ int main() {
     glGenVertexArrays(1, &cubeVAO); glGenBuffers(1, &cubeVBO);
     glBindVertexArray(cubeVAO); glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8*sizeof(float), (void*)0); glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8*sizeof(float), (void*)(3*sizeof(float))); glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8*sizeof(float), (void*)(6*sizeof(float))); glEnableVertexAttribArray(2);
@@ -329,9 +380,7 @@ int main() {
     glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(float), (void*)0); glEnableVertexAttribArray(0);
 
-    // --- UCITAVANJE TEKSTURA ---
     unsigned int cubeTexture = loadTexture("res/textures/container.jpg");
-
     char* faces[] = {
         "res/textures/skybox/right.jpg", "res/textures/skybox/left.jpg",
         "res/textures/skybox/top.jpg",   "res/textures/skybox/bottom.jpg",
@@ -344,16 +393,41 @@ int main() {
     glUseProgram(skyProgram);
     glUniform1i(glGetUniformLocation(skyProgram, "skybox"), 0);
 
+    // --- GLAVNA PETLJA ---
     while (!glfwWindowShouldClose(window)) {
         processInput(window);
+
+        // LOGIKA IGRE I TAJMERA
         if(!animating) {
             if(shuffling) {
-                if(shuffle_moves>0) { trigger("xyz"[rand()%3], rand()%3-1, (rand()%2)*2-1, 1); shuffle_moves--; animation_speed=20; }
-                else { shuffling=0; animation_speed=9; }
+                if(shuffle_moves>0) {
+                    trigger("xyz"[rand()%3], rand()%3-1, (rand()%2)*2-1, 1);
+                    shuffle_moves--;
+                    animation_speed=20;
+                } else {
+                    // Kraj shufflovanja - POCINJE IGRA
+                    shuffling=0;
+                    animation_speed=9;
+                    game_state = 2; // PLAYING
+                    start_time = glfwGetTime(); // Resetuj tajmer
+                }
             } else if(solving && history_count>0) {
-                Move m = history[--history_count]; trigger(m.axis, m.layer, -m.dir, 0); animation_speed=20;
-            } else solving=0;
+                Move m = history[--history_count];
+                trigger(m.axis, m.layer, -m.dir, 0);
+                animation_speed=20;
+            } else {
+                solving=0;
+                // Provera da li je reseno
+                if(game_state == 2 && history_count == 0) {
+                    game_state = 0; // SOLVED
+                    final_time = glfwGetTime() - start_time;
+                }
+            }
         }
+
+        // Azuriraj UI (Title Bar)
+        updateTitle(window);
+
         if(animating) {
             anim_angle += animation_speed;
             if(anim_angle>=90) { rotate_layer_fixed(anim_axis, anim_layer, glm_rad(90*anim_dir)); animating=0; }
@@ -371,11 +445,12 @@ int main() {
         glm_lookat((vec3){rCamPos[0],rCamPos[1],rCamPos[2]}, (vec3){0,0,0}, (vec3){0,1,0}, view);
         glm_perspective(glm_rad(45.0f), (float)SCR_WIDTH/SCR_HEIGHT, 0.1f, 100.0f, proj);
 
-        // --- CRTANJE KOCKE ---
         glUseProgram(cubeProg);
         glUniformMatrix4fv(glGetUniformLocation(cubeProg, "view"), 1, GL_FALSE, (float*)view);
         glUniformMatrix4fv(glGetUniformLocation(cubeProg, "projection"), 1, GL_FALSE, (float*)proj);
-        glUniform3f(glGetUniformLocation(cubeProg, "lightPos"), 5, 5, 10);
+
+        // Svetlo (Sunce)
+        glUniform3f(glGetUniformLocation(cubeProg, "lightPos"), 20.0f, 50.0f, 20.0f);
         glUniform3f(glGetUniformLocation(cubeProg, "viewPos"), rCamPos[0], rCamPos[1], rCamPos[2]);
 
         glActiveTexture(GL_TEXTURE0);
@@ -405,11 +480,10 @@ int main() {
             }
         }
 
-        // --- CRTANJE SKYBOX-A ---
         glDepthFunc(GL_LEQUAL);
         glUseProgram(skyProgram);
         mat4 viewNoTrans; glm_mat4_copy(view, viewNoTrans);
-        viewNoTrans[3][0]=0; viewNoTrans[3][1]=0; viewNoTrans[3][2]=0; // Ukloni translaciju
+        viewNoTrans[3][0]=0; viewNoTrans[3][1]=0; viewNoTrans[3][2]=0;
         glUniformMatrix4fv(glGetUniformLocation(skyProgram, "view"), 1, GL_FALSE, (float*)viewNoTrans);
         glUniformMatrix4fv(glGetUniformLocation(skyProgram, "projection"), 1, GL_FALSE, (float*)proj);
 
