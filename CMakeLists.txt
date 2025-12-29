@@ -26,6 +26,7 @@ find_package(glfw3 REQUIRED)
 add_executable(untitled3
         src/main.c
         src/glad.c
+        include/miniaudio.h
 )
 
 # --- 5. LINKOVANJE BIBLIOTEKA ---
@@ -37,4 +38,9 @@ if (APPLE)
     target_link_libraries(untitled3 "-framework Cocoa")
     target_link_libraries(untitled3 "-framework IOKit")
     target_link_libraries(untitled3 "-framework CoreVideo")
+endif()
+if(APPLE)
+    target_link_libraries(untitled3 "-framework CoreAudio -framework AudioToolbox -framework CoreFoundation")
+elseif(UNIX AND NOT APPLE)
+    target_link_libraries(untitled3 m dl pthread)
 endif()
