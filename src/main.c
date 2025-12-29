@@ -1,6 +1,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -13,14 +16,31 @@
 const unsigned int SCR_WIDTH = 1024;
 const unsigned int SCR_HEIGHT = 768;
 
-// --- GLOBALNE PROMENLJIVE ZA UI I STANJE IGRE ---
 double start_time = 0.0;
 double current_time = 0.0;
 double final_time = 0.0;
-int game_state = 0; // 0 = IDLE (Solved), 1 = SHUFFLING, 2 = PLAYING, 3 = SOLVING
+int game_state = 0;
 int total_moves = 0;
 
-// --- POMOCNE FUNKCIJE ZA FAJLOVE ---
+ma_engine audio_engine;
+
+void printHelp() {
+    printf("\n========================================\n");
+    printf("       RUBIKOVA KOCKA - NOVE KOMANDE  \n");
+    printf("========================================\n");
+    printf(" [S]     -> Promesaj kocku (Shuffle)\n");
+    printf(" [SPACE] -> Automatsko resavanje\n");
+    printf(" [H]     -> Prikazi pomoc\n");
+    printf("----------------------------------------\n");
+    printf(" KONTROLE (DESNA RUKA):\n");
+    printf(" I / K   -> Gore (Up) / Dole (Down)\n");
+    printf(" J / L   -> Levo (Left) / Desno (Right)\n");
+    printf(" U / O   -> Napred (Front) / Nazad (Back)\n");
+    printf("----------------------------------------\n");
+    printf(" KAMERA:\n");
+    printf(" Drzi Levi Klik + Pomeraj misa\n");
+    printf("========================================\n\n");
+}
 
 char* readFile(const char* path) {
     FILE* file = fopen(path, "rb");
@@ -37,8 +57,6 @@ char* readFile(const char* path) {
     fclose(file);
     return buffer;
 }
-
-// --- FUNKCIJE ZA SHADERE ---
 
 unsigned int createShader(const char* source, GLenum type) {
     unsigned int shader = glCreateShader(type);
@@ -57,17 +75,13 @@ unsigned int createShader(const char* source, GLenum type) {
 unsigned int createProgram(const char* vPath, const char* fPath) {
     char* vSource = readFile(vPath);
     char* fSource = readFile(fPath);
-
     if (!vSource || !fSource) return 0;
-
     unsigned int vShader = createShader(vSource, GL_VERTEX_SHADER);
     unsigned int fShader = createShader(fSource, GL_FRAGMENT_SHADER);
-
     unsigned int program = glCreateProgram();
     glAttachShader(program, vShader);
     glAttachShader(program, fShader);
     glLinkProgram(program);
-
     int success;
     char infoLog[512];
     glGetProgramiv(program, GL_LINK_STATUS, &success);
@@ -75,16 +89,12 @@ unsigned int createProgram(const char* vPath, const char* fPath) {
         glGetProgramInfoLog(program, 512, NULL, infoLog);
         printf("Program Linking Error: %s\n", infoLog);
     }
-
     glDeleteShader(vShader);
     glDeleteShader(fShader);
     free(vSource);
     free(fSource);
-
     return program;
 }
-
-// --- POMOCNE FUNKCIJE ZA TEKSTURE ---
 
 unsigned int loadTexture(char const * path) {
     unsigned int textureID;
@@ -96,12 +106,10 @@ unsigned int loadTexture(char const * path) {
         glBindTexture(GL_TEXTURE_2D, textureID);
         glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
         glGenerateMipmap(GL_TEXTURE_2D);
-
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
         stbi_image_free(data);
     } else {
         printf("Texture failed to load at path: %s\n", path);
@@ -133,8 +141,6 @@ unsigned int loadCubemap(char** faces) {
     return textureID;
 }
 
-// --- INPUT I CALLBACKS ---
-
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
@@ -144,7 +150,6 @@ void processInput(GLFWwindow *window) {
         glfwSetWindowShouldClose(window, 1);
 }
 
-// --- LOGIKA KOCKE ---
 typedef struct { char axis; int layer; float dir; } Move;
 Move history[2000]; int history_count = 0;
 
@@ -193,31 +198,32 @@ void trigger(char ax, int l, float d, int rec) {
     animating=1; anim_axis=ax; anim_layer=l; anim_dir=d; anim_angle=0;
     if(rec && history_count<2000) {
         history[history_count++] = (Move){ax, l, d};
-        // Ako igramo, ovo je potez vise
         if(game_state == 2) total_moves++;
     }
+    ma_engine_play_sound(&audio_engine, "res/sounds/move.wav", NULL);
 }
 
 void key_cb(GLFWwindow* w, int k, int s, int a, int m) {
-    if(a!=GLFW_PRESS || animating) return;
-
-    // Kontrole za okretanje
-    if(k==GLFW_KEY_U) trigger('y', 1, -1, 1); if(k==GLFW_KEY_D) trigger('y', -1, 1, 1);
-    if(k==GLFW_KEY_L) trigger('x', -1, 1, 1); if(k==GLFW_KEY_R) trigger('x', 1, -1, 1);
-    if(k==GLFW_KEY_F) trigger('z', 1, -1, 1); if(k==GLFW_KEY_B) trigger('z', -1, 1, 1);
-
-    // Shuffle (S)
-    if(k==GLFW_KEY_S && !shuffling && !solving) {
-        shuffling=1;
-        shuffle_moves=20;
-        game_state = 1; // SHUFFLING
-        total_moves = 0;
+    if(k == GLFW_KEY_H && a == GLFW_PRESS) {
+        printHelp();
     }
 
-    // Solve (SPACE)
+    if(a!=GLFW_PRESS || animating) return;
+
+    if(k==GLFW_KEY_I) trigger('y', 1, -1, 1);
+    if(k==GLFW_KEY_K) trigger('y', -1, 1, 1);
+
+    if(k==GLFW_KEY_J) trigger('x', -1, 1, 1);
+    if(k==GLFW_KEY_L) trigger('x', 1, -1, 1);
+
+    if(k==GLFW_KEY_U) trigger('z', 1, -1, 1);
+    if(k==GLFW_KEY_O) trigger('z', -1, 1, 1);
+
+    if(k==GLFW_KEY_S && !shuffling && !solving) {
+        shuffling=1; shuffle_moves=20; game_state = 1; total_moves = 0;
+    }
     if(k==GLFW_KEY_SPACE && history_count>0 && !shuffling) {
-        solving=1;
-        game_state = 3; // SOLVING
+        solving=1; game_state = 3;
     }
 }
 
@@ -230,7 +236,6 @@ void mouse_cb(GLFWwindow* w, double x, double y) {
     } else first_mouse=1;
 }
 
-// --- SKYBOX SHADERI ---
 const char* skyboxVertSrc = "#version 330 core\n"
     "layout (location = 0) in vec3 aPos;\n"
     "out vec3 TexCoords;\n"
@@ -250,34 +255,35 @@ const char* skyboxFragSrc = "#version 330 core\n"
     "    FragColor = texture(skybox, TexCoords);\n"
     "}\n\0";
 
-// --- FUNKCIJA ZA AZURIRANJE UI (TITLE BAR) ---
 void updateTitle(GLFWwindow* window) {
     char title[256];
     double t = 0.0;
-
-    if (game_state == 2) { // PLAYING
-        t = glfwGetTime() - start_time;
-    } else if (game_state == 0 && final_time > 0) { // SOLVED
-        t = final_time;
-    }
+    if (game_state == 2) t = glfwGetTime() - start_time;
+    else if (game_state == 0 && final_time > 0) t = final_time;
 
     int minutes = (int)t / 60;
     double seconds = t - (minutes * 60);
-
     char* stateStr = "IDLE";
     if(game_state == 1) stateStr = "SHUFFLING...";
     if(game_state == 2) stateStr = "PLAYING";
     if(game_state == 3) stateStr = "AUTO-SOLVING";
     if(game_state == 0 && history_count == 0 && total_moves > 0) stateStr = "SOLVED!";
 
-    sprintf(title, "Rubik's Cube | Status: %s | Time: %02d:%05.2f | Moves to Solve: %d | [S] Shuffle [Space] Solve",
+    sprintf(title, "Rubik's Cube | Status: %s | Time: %02d:%05.2f | Moves: %d | [H] Help",
             stateStr, minutes, seconds, history_count);
-
     glfwSetWindowTitle(window, title);
 }
 
 int main() {
     srand(time(NULL)); init_cubes();
+
+    printHelp();
+
+    if (ma_engine_init(NULL, &audio_engine) != MA_SUCCESS) {
+        printf("GRESKA: Nije moguce inicijalizovati audio engine!\n");
+        return -1;
+    }
+
     glfwInit(); glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3); glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #ifdef __APPLE__
@@ -294,9 +300,7 @@ int main() {
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) return -1;
     glEnable(GL_DEPTH_TEST);
 
-    // --- UCITAVANJE SHADERA ---
     unsigned int cubeProg = createProgram("res/shaders/vert.glsl", "res/shaders/frag.glsl");
-
     unsigned int skyProg = createShader(skyboxVertSrc, GL_VERTEX_SHADER);
     unsigned int skyFrag = createShader(skyboxFragSrc, GL_FRAGMENT_SHADER);
     unsigned int skyProgram = glCreateProgram();
@@ -304,44 +308,37 @@ int main() {
     glAttachShader(skyProgram, skyFrag);
     glLinkProgram(skyProgram);
 
-    // --- KOCKA PODACI ---
     float vertices[] = {
-        // Back (-Z)
         -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
          0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
          0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f,
          0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
         -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
         -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 1.0f,
-        // Front (+Z)
         -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
          0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 0.0f,
          0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f,
          0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f,
         -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 1.0f,
         -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
-        // Left (-X)
         -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
         -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
         -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
         -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
         -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
         -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
-        // Right (+X)
          0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
          0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
          0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
          0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
          0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
          0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
-        // Bottom (-Y)
         -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
          0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 1.0f,
          0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
          0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
         -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 0.0f,
         -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
-        // Top (+Y)
         -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f,
          0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
          0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 1.0f,
@@ -369,7 +366,6 @@ int main() {
     glGenVertexArrays(1, &cubeVAO); glGenBuffers(1, &cubeVBO);
     glBindVertexArray(cubeVAO); glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8*sizeof(float), (void*)0); glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8*sizeof(float), (void*)(3*sizeof(float))); glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8*sizeof(float), (void*)(6*sizeof(float))); glEnableVertexAttribArray(2);
@@ -393,39 +389,23 @@ int main() {
     glUseProgram(skyProgram);
     glUniform1i(glGetUniformLocation(skyProgram, "skybox"), 0);
 
-    // --- GLAVNA PETLJA ---
     while (!glfwWindowShouldClose(window)) {
         processInput(window);
-
-        // LOGIKA IGRE I TAJMERA
         if(!animating) {
             if(shuffling) {
                 if(shuffle_moves>0) {
                     trigger("xyz"[rand()%3], rand()%3-1, (rand()%2)*2-1, 1);
-                    shuffle_moves--;
-                    animation_speed=20;
+                    shuffle_moves--; animation_speed=20;
                 } else {
-                    // Kraj shufflovanja - POCINJE IGRA
-                    shuffling=0;
-                    animation_speed=9;
-                    game_state = 2; // PLAYING
-                    start_time = glfwGetTime(); // Resetuj tajmer
+                    shuffling=0; animation_speed=9; game_state = 2; start_time = glfwGetTime();
                 }
             } else if(solving && history_count>0) {
-                Move m = history[--history_count];
-                trigger(m.axis, m.layer, -m.dir, 0);
-                animation_speed=20;
+                Move m = history[--history_count]; trigger(m.axis, m.layer, -m.dir, 0); animation_speed=20;
             } else {
                 solving=0;
-                // Provera da li je reseno
-                if(game_state == 2 && history_count == 0) {
-                    game_state = 0; // SOLVED
-                    final_time = glfwGetTime() - start_time;
-                }
+                if(game_state == 2 && history_count == 0) { game_state = 0; final_time = glfwGetTime() - start_time; }
             }
         }
-
-        // Azuriraj UI (Title Bar)
         updateTitle(window);
 
         if(animating) {
@@ -448,8 +428,6 @@ int main() {
         glUseProgram(cubeProg);
         glUniformMatrix4fv(glGetUniformLocation(cubeProg, "view"), 1, GL_FALSE, (float*)view);
         glUniformMatrix4fv(glGetUniformLocation(cubeProg, "projection"), 1, GL_FALSE, (float*)proj);
-
-        // Svetlo (Sunce)
         glUniform3f(glGetUniformLocation(cubeProg, "lightPos"), 20.0f, 50.0f, 20.0f);
         glUniform3f(glGetUniformLocation(cubeProg, "viewPos"), rCamPos[0], rCamPos[1], rCamPos[2]);
 
@@ -495,5 +473,8 @@ int main() {
 
         glfwSwapBuffers(window); glfwPollEvents();
     }
+
+    ma_engine_uninit(&audio_engine);
+
     glfwTerminate(); return 0;
 }
