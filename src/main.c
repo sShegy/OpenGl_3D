@@ -26,7 +26,7 @@ ma_engine audio_engine;
 
 void printHelp() {
     printf("\n========================================\n");
-    printf("       RUBIKOVA KOCKA - NOVE KOMANDE  \n");
+    printf("              RUBIKOVA KOCKA               \n");
     printf("========================================\n");
     printf(" [S]     -> Promesaj kocku (Shuffle)\n");
     printf(" [SPACE] -> Automatsko resavanje\n");
