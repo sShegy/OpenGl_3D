@@ -7,8 +7,8 @@ in vec2 TexCoords;
 in vec3 FaceColor;
 
 uniform sampler2D texture1;
-uniform vec3 lightPos; // Pozicija sunca
-uniform vec3 viewPos;  // Pozicija kamere
+uniform vec3 lightPos; 
+uniform vec3 viewPos;  
 
 void main() {
     vec3 lightColor = vec3(1.0, 0.95, 0.9);
