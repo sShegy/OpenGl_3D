@@ -1,84 +1,81 @@
-# 3D Rubikova Kocka
+# 🎲 3D Rubikova Kocka (OpenGL)
 
-## Opis projekta
+![C](https://img.shields.io/badge/Language-C-00599C?style=for-the-badge&logo=c&logoColor=white)
+![OpenGL](https://img.shields.io/badge/OpenGL-3.3-red?style=for-the-badge&logo=opengl&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey?style=for-the-badge)
 
-Projekat predstavlja interaktivnu 3D simulaciju Rubikove kocke implementiranu u programskom jeziku **C** korišćenjem **OpenGL 3.3 Core Profile**. Aplikacija omogućava korisniku da rotira celu kocku, rotira pojedinačne slojeve, nasumično izmeša kocku (scramble) i vrati poteze unazad (solve).
-
-Cilj projekta je demonstracija rada sa modernim OpenGL-om, shaderima, matricama transformacije, teksturama i osnovnom 3D interakcijom.
-
----
-
-## Korišćene tehnologije i biblioteke
-
-- **OpenGL 3.3 (Core Profile)**  
-  Renderovanje 3D geometrije i rad sa GPU-om.
-
-- **GLFW**  
-  Kreiranje prozora, OpenGL konteksta i obrada korisničkog inputa (tastatura i miš).
-
-- **GLAD**  
-  Učitavanje OpenGL funkcija.
-
-- **cglm**  
-  Matematička biblioteka za rad sa vektorima i matricama (model, view, projection).
-
-- **stb_image**  
-  Učitavanje tekstura i cubemap (skybox).
-
-- **GLSL (vertex i fragment shaderi)**  
-  Transformacije, osvetljenje i teksturisanje.
+> **Interaktivna 3D simulacija Rubikove kocke sa animacijama, zvukom i logikom za automatsko rešavanje.**
 
 ---
 
-## Funkcionalnosti
+## 📖 Opis Projekta
 
-### 1. Prikaz Rubikove kocke
-- Kocka se sastoji od **27 manjih kockica (cubies)** raspoređenih u 3×3×3 mrežu.
-- Svaka kockica ima obojene strane koje predstavljaju boje Rubikove kocke.
-- Kocka je blago skalirana kako bi se jasno videli razmaci između kockica.
+Ovaj projekat je implementacija Rubikove kocke u programskom jeziku **C** koristeći **OpenGL 3.3 Core Profile**. Cilj je bio kreirati vizuelno dopadljivu i potpuno funkcionalnu simulaciju koja demonstrira napredne grafičke tehnike kao što su matrične transformacije, skybox renderovanje i rad sa audio sistemom.
 
-### 2. Animirana rotacija slojeva
-- Svaki potez se animira postepeno (rotacija od 0° do 90°).
-- Rotacije su moguće oko X, Y i Z ose.
-- Tokom animacije ostali inputi su blokirani kako bi se izbegle greške.
-
-### 3. Interakcija mišem
-- Držanjem **levog tastera miša** i pomeranjem:
-    - Rotira se cela Rubikova kocka (yaw i pitch).
-- Ograničen je vertikalni ugao rotacije kako bi se izbegao „flip“ kamere.
-
-### 4. Tastatura – kontrole slojeva
-
-| Taster | Akcija |
-|------|------|
-| **U** | Gornji sloj (Upper) |
-| **D** | Donji sloj (Down) |
-| **L** | Levi sloj (Left) |
-| **R** | Desni sloj (Right) |
-| **F** | Prednji sloj (Front) |
-| **B** | Zadnji sloj (Back) |
-| **S** | Nasumično mešanje (Scramble) |
-| **SPACE** | Vraćanje poteza (Solve / Undo) |
-| **ESC** | Izlaz iz aplikacije |
+Kocka nije statičan model – ona se sastoji od **27 proceduralno generisanih manjih kockica** koje se kreću nezavisno u prostoru.
 
 ---
 
-## Logika Rubikove kocke
+## 🛠️ Korišćene Tehnologije
 
-- Svaki potez se pamti u **istoriji poteza (stack)**.
-- Prilikom `Scramble` opcije generiše se niz nasumičnih rotacija.
-- Opcija `Solve` koristi istoriju poteza i izvršava ih unazad (undo mehanizam).
-- Rotacije se vrše matricama transformacije nad pojedinačnim kockicama.
-
-> Napomena: Projekat se fokusira na **vizuelnu i interaktivnu simulaciju**. Logička permutacija boja ne simulira u potpunosti matematičko stanje prave Rubikove kocke, ali je vizuelno ponašanje ispravno.
+| Biblioteka | Namena |
+| :--- | :--- |
+| **OpenGL 3.3** | Renderovanje grafike (Core Profile) |
+| **GLFW** | Upravljanje prozorom i inputima (tastatura/miš) |
+| **GLAD** | Učitavanje OpenGL pointera |
+| **cglm** | Napredna matematika (matrice, vektori, kvaternioni) |
+| **stb_image** | Učitavanje tekstura i Skybox-a |
+| **miniaudio** | Audio engine za zvučne efekte |
 
 ---
 
-## Skybox
+## ✨ Funkcionalnosti
 
-- Implementiran je **cubemap skybox** koji okružuje scenu.
-- Skybox se renderuje bez translacije kamere kako bi uvek ostao statičan u pozadini.
-- Korišćeno je šest tekstura (right, left, top, bottom, front, back).
-- Prilikom renderovanja skybox-a koristi se:
-  ```c
-  glDepthFunc(GL_LEQUAL);
+*   🎨 **3D Renderovanje:** Realističan prikaz kocke sa teksturama.
+*   🔄 **Animacije:** Glatke interpolirane rotacije slojeva.
+*   🌌 **Skybox:** Imersivno 3D okruženje (Cubemap).
+*   🔊 **Zvuk:** Zvučni efekti prilikom svakog poteza.
+*   🧠 **Logika:**
+    *   **Shuffle:** Nasumično mešanje kocke.
+    *   **Auto-Solve:** Pamćenje poteza i automatsko rešavanje unazad.
+*   🖱️ **Kamera:** Potpuna kontrola kamere mišem (Orbit system).
+
+---
+
+## 🎮 Kontrole
+
+### 🖱️ Miš
+*   **Drži Levi Klik + Pomeraj:** Rotacija kamere oko kocke.
+
+### ⌨️ Tastatura (Rotacija Slojeva)
+
+| Taster | Akcija (Sloj) |
+| :---: | :--- |
+| **I** | Gornji sloj (**Up**) |
+| **K** | Donji sloj (**Down**) |
+| **J** | Levi sloj (**Left**) |
+| **L** | Desni sloj (**Right**) |
+| **U** | Prednji sloj (**Front**) |
+| **O** | Zadnji sloj (**Back**) |
+
+### ⚙️ Funkcije Igre
+
+| Taster | Funkcija |
+| :---: | :--- |
+| **S** | **Shuffle:** Nasumično mešanje kocke |
+| **SPACE** | **Auto-Solve:** Automatsko rešavanje kocke |
+| **H** | **Help:** Prikaz pomoći u konzoli |
+| **ESC** | Izlaz iz programa |
+
+---
+
+## 🚀 Kako Pokrenuti
+
+1.  Klonirajte repozitorijum.
+2.  Uverite se da imate instalirane potrebne biblioteke ili da su linkovane u projektu (`lib` folder).
+3.  Folder `res` (resursi) mora biti u istom direktorijumu kao i izvršni `.exe` fajl.
+4.  Kompajlirajte koristeći vaš omiljeni C kompajler.
+
+**Primer za GCC:**
+```bash
+gcc main.c glad.c -o rubik -lglfw3 -lgdi32 -lopengl32 -lm
