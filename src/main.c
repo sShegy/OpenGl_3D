@@ -21,84 +21,66 @@ double current_time = 0.0;
 double final_time = 0.0;
 int game_state = 0;
 int total_moves = 0;
+int postProcessEffect = 0; // 0 = Normal, 1 = Inversion, 2 = Vignette, 3 = Grayscale
 
 ma_engine audio_engine;
 
 void printHelp() {
-    printf("\n========================================\n");
-    printf("              RUBIKOVA KOCKA               \n");
-    printf("========================================\n");
-    printf(" [S]     -> Promesaj kocku (Shuffle)\n");
-    printf(" [SPACE] -> Automatsko resavanje\n");
-    printf(" [H]     -> Prikazi pomoc\n");
-    printf("----------------------------------------\n");
-    printf(" KONTROLE (DESNA RUKA):\n");
-    printf(" I / K   -> Gore (Up) / Dole (Down)\n");
-    printf(" J / L   -> Levo (Left) / Desno (Right)\n");
-    printf(" U / O   -> Napred (Front) / Nazad (Back)\n");
-    printf("----------------------------------------\n");
-    printf(" KAMERA:\n");
-    printf(" Drzi Levi Klik + Pomeraj misa\n");
-    printf("========================================\n\n");
+    printf("\n");
+    printf("=======================================================\n");
+    printf("                 RUBIKOVA KOCKA       \n");
+    printf("=======================================================\n");
+
+    printf(" [ GLAVNE OPCIJE ]\n");
+    printf("   [S]       -> Promesaj kocku (Shuffle)\n");
+    printf("   [SPACE]   -> Automatsko resavanje (Auto Solve)\n");
+    printf("   [H]       -> Prikazi ovu pomoc\n");
+    printf("   [ESC]     -> Izlaz iz programa\n");
+    printf("-------------------------------------------------------\n");
+
+    printf(" [ POST-PROCESSING EFEKTI (Shaderi) ]\n");
+    printf("   [1]       -> Normalan prikaz (Normal Mapping + PBR)\n");
+    printf("   [2]       -> Efekat: Inverzija boja\n");
+    printf("   [3]       -> Efekat: Vinjeta (Zatamnjeni uglovi)\n");
+    printf("   [4]       -> Efekat: Crno-Belo (Grayscale)\n");
+    printf("-------------------------------------------------------\n");
+
+    printf(" [ KONTROLE KOCKE  ]\n");
+    printf("   I / K     -> Rotacija po vertikali (Y osa)\n");
+    printf("   J / L     -> Rotacija po horizontali (X osa)\n");
+    printf("   U / O     -> Rotacija po dubini (Z osa)\n");
+    printf("-------------------------------------------------------\n");
+
 }
 
 char* readFile(const char* path) {
     FILE* file = fopen(path, "rb");
-    if (!file) {
-        printf("GRESKA: Nije moguce otvoriti fajl: %s\n", path);
-        return NULL;
-    }
-    fseek(file, 0, SEEK_END);
-    long length = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    char* buffer = malloc(length + 1);
-    fread(buffer, 1, length, file);
-    buffer[length] = '\0';
-    fclose(file);
-    return buffer;
+    if (!file) { printf("GRESKA: Nije moguce otvoriti fajl: %s\n", path); return NULL; }
+    fseek(file, 0, SEEK_END); long length = ftell(file); fseek(file, 0, SEEK_SET);
+    char* buffer = malloc(length + 1); fread(buffer, 1, length, file);
+    buffer[length] = '\0'; fclose(file); return buffer;
 }
 
 unsigned int createShader(const char* source, GLenum type) {
-    unsigned int shader = glCreateShader(type);
-    glShaderSource(shader, 1, &source, NULL);
-    glCompileShader(shader);
-    int success;
-    char infoLog[512];
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        glGetShaderInfoLog(shader, 512, NULL, infoLog);
-        printf("Shader Error: %s\n", infoLog);
-    }
+    unsigned int shader = glCreateShader(type); glShaderSource(shader, 1, &source, NULL); glCompileShader(shader);
+    int success; char infoLog[512]; glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success) { glGetShaderInfoLog(shader, 512, NULL, infoLog); printf("Shader Error: %s\n", infoLog); }
     return shader;
 }
 
 unsigned int createProgram(const char* vPath, const char* fPath) {
-    char* vSource = readFile(vPath);
-    char* fSource = readFile(fPath);
+    char* vSource = readFile(vPath); char* fSource = readFile(fPath);
     if (!vSource || !fSource) return 0;
     unsigned int vShader = createShader(vSource, GL_VERTEX_SHADER);
     unsigned int fShader = createShader(fSource, GL_FRAGMENT_SHADER);
     unsigned int program = glCreateProgram();
-    glAttachShader(program, vShader);
-    glAttachShader(program, fShader);
-    glLinkProgram(program);
-    int success;
-    char infoLog[512];
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-    if (!success) {
-        glGetProgramInfoLog(program, 512, NULL, infoLog);
-        printf("Program Linking Error: %s\n", infoLog);
-    }
-    glDeleteShader(vShader);
-    glDeleteShader(fShader);
-    free(vSource);
-    free(fSource);
+    glAttachShader(program, vShader); glAttachShader(program, fShader); glLinkProgram(program);
+    glDeleteShader(vShader); glDeleteShader(fShader); free(vSource); free(fSource);
     return program;
 }
 
 unsigned int loadTexture(char const * path) {
-    unsigned int textureID;
-    glGenTextures(1, &textureID);
+    unsigned int textureID; glGenTextures(1, &textureID);
     int width, height, nrComponents;
     unsigned char *data = stbi_load(path, &width, &height, &nrComponents, 0);
     if (data) {
@@ -111,16 +93,12 @@ unsigned int loadTexture(char const * path) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         stbi_image_free(data);
-    } else {
-        printf("Texture failed to load at path: %s\n", path);
-        stbi_image_free(data);
-    }
+    } else { printf("Texture failed: %s\n", path); stbi_image_free(data); }
     return textureID;
 }
 
 unsigned int loadCubemap(char** faces) {
-    unsigned int textureID;
-    glGenTextures(1, &textureID);
+    unsigned int textureID; glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
     int width, height, nrChannels;
     for (unsigned int i = 0; i < 6; i++) {
@@ -128,10 +106,7 @@ unsigned int loadCubemap(char** faces) {
         if (data) {
             glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
             stbi_image_free(data);
-        } else {
-            printf("Cubemap texture failed to load at path: %s\n", faces[i]);
-            stbi_image_free(data);
-        }
+        } else stbi_image_free(data);
     }
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -141,23 +116,13 @@ unsigned int loadCubemap(char** faces) {
     return textureID;
 }
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
-    glViewport(0, 0, width, height);
-}
-
-void processInput(GLFWwindow *window) {
-    if(glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, 1);
-}
+void framebuffer_size_callback(GLFWwindow* window, int width, int height) { glViewport(0, 0, width, height); }
 
 typedef struct { char axis; int layer; float dir; } Move;
 Move history[2000]; int history_count = 0;
-
 int animating = 0, solving = 0, shuffling = 0, shuffle_moves = 0;
-float anim_angle = 0.0f, anim_dir = 1.0f;
-char anim_axis = 'y'; int anim_layer = 0;
+float anim_angle = 0.0f, anim_dir = 1.0f; char anim_axis = 'y'; int anim_layer = 0;
 float animation_speed = 9.0f;
-
 float cube_yaw = 45.0f, cube_pitch = -30.0f, cam_dist = 8.0f;
 double last_x, last_y; int first_mouse = 1;
 
@@ -196,34 +161,26 @@ void rotate_layer_fixed(char axis, int layer, float angle) {
 
 void trigger(char ax, int l, float d, int rec) {
     animating=1; anim_axis=ax; anim_layer=l; anim_dir=d; anim_angle=0;
-    if(rec && history_count<2000) {
-        history[history_count++] = (Move){ax, l, d};
-        if(game_state == 2) total_moves++;
-    }
+    if(rec && history_count<2000) { history[history_count++] = (Move){ax, l, d}; if(game_state == 2) total_moves++; }
     ma_engine_play_sound(&audio_engine, "res/sounds/move.wav", NULL);
 }
 
 void key_cb(GLFWwindow* w, int k, int s, int a, int m) {
-    if(k == GLFW_KEY_H && a == GLFW_PRESS) {
-        printHelp();
-    }
+    if(a==GLFW_PRESS) {
+        if(k==GLFW_KEY_ESCAPE) glfwSetWindowShouldClose(w, 1);
+        if(k==GLFW_KEY_H) printHelp();
+        if(k==GLFW_KEY_1) postProcessEffect = 0;
+        if(k==GLFW_KEY_2) postProcessEffect = 1;
+        if(k==GLFW_KEY_3) postProcessEffect = 2;
+        if(k==GLFW_KEY_4) postProcessEffect = 3;
 
-    if(a!=GLFW_PRESS || animating) return;
-
-    if(k==GLFW_KEY_I) trigger('y', 1, -1, 1);
-    if(k==GLFW_KEY_K) trigger('y', -1, 1, 1);
-
-    if(k==GLFW_KEY_J) trigger('x', -1, 1, 1);
-    if(k==GLFW_KEY_L) trigger('x', 1, -1, 1);
-
-    if(k==GLFW_KEY_U) trigger('z', 1, -1, 1);
-    if(k==GLFW_KEY_O) trigger('z', -1, 1, 1);
-
-    if(k==GLFW_KEY_S && !shuffling && !solving) {
-        shuffling=1; shuffle_moves=20; game_state = 1; total_moves = 0;
-    }
-    if(k==GLFW_KEY_SPACE && history_count>0 && !shuffling) {
-        solving=1; game_state = 3;
+        if(!animating) {
+            if(k==GLFW_KEY_I) trigger('y', 1, -1, 1); if(k==GLFW_KEY_K) trigger('y', -1, 1, 1);
+            if(k==GLFW_KEY_J) trigger('x', -1, 1, 1); if(k==GLFW_KEY_L) trigger('x', 1, -1, 1);
+            if(k==GLFW_KEY_U) trigger('z', 1, -1, 1); if(k==GLFW_KEY_O) trigger('z', -1, 1, 1);
+            if(k==GLFW_KEY_S && !shuffling && !solving) { shuffling=1; shuffle_moves=20; game_state=1; total_moves=0; }
+            if(k==GLFW_KEY_SPACE && history_count>0 && !shuffling) { solving=1; game_state=3; }
+        }
     }
 }
 
@@ -236,77 +193,30 @@ void mouse_cb(GLFWwindow* w, double x, double y) {
     } else first_mouse=1;
 }
 
-const char* skyboxVertSrc = "#version 330 core\n"
-    "layout (location = 0) in vec3 aPos;\n"
-    "out vec3 TexCoords;\n"
-    "uniform mat4 projection;\n"
-    "uniform mat4 view;\n"
-    "void main() {\n"
-    "    TexCoords = aPos;\n"
-    "    vec4 pos = projection * view * vec4(aPos, 1.0);\n"
-    "    gl_Position = pos.xyww;\n"
-    "}\0";
-
-const char* skyboxFragSrc = "#version 330 core\n"
-    "out vec4 FragColor;\n"
-    "in vec3 TexCoords;\n"
-    "uniform samplerCube skybox;\n"
-    "void main() {\n"
-    "    FragColor = texture(skybox, TexCoords);\n"
-    "}\n\0";
-
-void updateTitle(GLFWwindow* window) {
-    char title[256];
-    double t = 0.0;
-    if (game_state == 2) t = glfwGetTime() - start_time;
-    else if (game_state == 0 && final_time > 0) t = final_time;
-
-    int minutes = (int)t / 60;
-    double seconds = t - (minutes * 60);
-    char* stateStr = "IDLE";
-    if(game_state == 1) stateStr = "SHUFFLING...";
-    if(game_state == 2) stateStr = "PLAYING";
-    if(game_state == 3) stateStr = "AUTO-SOLVING";
-    if(game_state == 0 && history_count == 0 && total_moves > 0) stateStr = "SOLVED!";
-
-    sprintf(title, "Rubik's Cube | Status: %s | Time: %02d:%05.2f | Moves: %d | [H] Help",
-            stateStr, minutes, seconds, history_count);
-    glfwSetWindowTitle(window, title);
-}
+const char* skyboxVertSrc = "#version 330 core\nlayout (location=0) in vec3 aPos;\nout vec3 TexCoords;\nuniform mat4 projection;\nuniform mat4 view;\nvoid main(){\nTexCoords=aPos;\ngl_Position=(projection*view*vec4(aPos,1.0)).xyww;\n}\0";
+const char* skyboxFragSrc = "#version 330 core\nout vec4 FragColor;\nin vec3 TexCoords;\nuniform samplerCube skybox;\nvoid main(){\nFragColor=texture(skybox,TexCoords);\n}\n\0";
 
 int main() {
     srand(time(NULL)); init_cubes();
-
-    printHelp();
-
-    if (ma_engine_init(NULL, &audio_engine) != MA_SUCCESS) {
-        printf("GRESKA: Nije moguce inicijalizovati audio engine!\n");
-        return -1;
-    }
-
+    if (ma_engine_init(NULL, &audio_engine) != MA_SUCCESS) return -1;
     glfwInit(); glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3); glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-#ifdef __APPLE__
+    #ifdef __APPLE__
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-#endif
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Perfect Rubik's Cube", NULL, NULL);
-    if (!window) { glfwTerminate(); return -1; }
-
-    glfwMakeContextCurrent(window);
-    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-    glfwSetCursorPosCallback(window, mouse_cb);
-    glfwSetKeyCallback(window, key_cb);
-
+    #endif
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Rubik's Cube Pro Graphics", NULL, NULL);
+    glfwMakeContextCurrent(window); glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+    glfwSetCursorPosCallback(window, mouse_cb); glfwSetKeyCallback(window, key_cb);
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) return -1;
     glEnable(GL_DEPTH_TEST);
 
-    unsigned int cubeProg = createProgram("res/shaders/vert.glsl", "res/shaders/frag.glsl");
-    unsigned int skyProg = createShader(skyboxVertSrc, GL_VERTEX_SHADER);
-    unsigned int skyFrag = createShader(skyboxFragSrc, GL_FRAGMENT_SHADER);
-    unsigned int skyProgram = glCreateProgram();
-    glAttachShader(skyProgram, skyProg);
-    glAttachShader(skyProgram, skyFrag);
-    glLinkProgram(skyProgram);
+    unsigned int cubeProg = createProgram("res/shaders/cube.vert", "res/shaders/cube.frag");
+    unsigned int screenProg = createProgram("res/shaders/screen.vert", "res/shaders/screen.frag");
+
+    unsigned int skyProg = glCreateProgram();
+    unsigned int sv = createShader(skyboxVertSrc, GL_VERTEX_SHADER);
+    unsigned int sf = createShader(skyboxFragSrc, GL_FRAGMENT_SHADER);
+    glAttachShader(skyProg, sv); glAttachShader(skyProg, sf); glLinkProgram(skyProg);
 
     float vertices[] = {
         -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
@@ -346,22 +256,6 @@ int main() {
         -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f,
         -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 0.0f
     };
-
-    float skyboxVertices[] = {
-        -1.0f,  1.0f, -1.0f, -1.0f, -1.0f, -1.0f,  1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,  1.0f,  1.0f, -1.0f, -1.0f,  1.0f, -1.0f,
-        -1.0f, -1.0f,  1.0f, -1.0f, -1.0f, -1.0f, -1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f, -1.0f,  1.0f,  1.0f, -1.0f, -1.0f,  1.0f,
-         1.0f, -1.0f, -1.0f,  1.0f, -1.0f,  1.0f,  1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,  1.0f,  1.0f, -1.0f,  1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f,  1.0f, -1.0f,  1.0f,  1.0f,  1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,  1.0f, -1.0f,  1.0f, -1.0f, -1.0f,  1.0f,
-        -1.0f,  1.0f, -1.0f,  1.0f,  1.0f, -1.0f,  1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f, -1.0f,  1.0f,  1.0f, -1.0f,  1.0f, -1.0f,
-        -1.0f, -1.0f, -1.0f, -1.0f, -1.0f,  1.0f,  1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f, -1.0f, -1.0f,  1.0f,  1.0f, -1.0f,  1.0f
-    };
-
     unsigned int cubeVAO, cubeVBO;
     glGenVertexArrays(1, &cubeVAO); glGenBuffers(1, &cubeVBO);
     glBindVertexArray(cubeVAO); glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
@@ -370,57 +264,61 @@ int main() {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8*sizeof(float), (void*)(3*sizeof(float))); glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8*sizeof(float), (void*)(6*sizeof(float))); glEnableVertexAttribArray(2);
 
+    float quadVerts[] = { -1,1,0,1, -1,-1,0,0, 1,-1,1,0, -1,1,0,1, 1,-1,1,0, 1,1,1,1 };
+    unsigned int quadVAO, quadVBO;
+    glGenVertexArrays(1, &quadVAO); glGenBuffers(1, &quadVBO);
+    glBindVertexArray(quadVAO); glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVerts), &quadVerts, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)0); glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)(2*sizeof(float))); glEnableVertexAttribArray(1);
+
+    float skyboxVertices[] = { -1,1,-1,-1,-1,-1,1,-1,-1,1,-1,-1,1,1,-1,-1,1,-1,-1,-1,1,-1,-1,-1,-1,1,-1,-1,1,-1,-1,1,1,-1,-1,1,1,-1,-1,1,-1,1,1,1,1,1,1,1,1,1,-1,1,-1,-1,-1,-1,1,-1,1,1,1,1,1,1,1,1,1,-1,1,-1,-1,1,-1,1,-1,1,1,-1,1,1,1,1,1,1,-1,1,1,-1,1,-1,-1,-1,-1,-1,-1,1,1,-1,-1,1,-1,-1,-1,-1,1,1,-1,1 };
     unsigned int skyVAO, skyVBO;
     glGenVertexArrays(1, &skyVAO); glGenBuffers(1, &skyVBO);
     glBindVertexArray(skyVAO); glBindBuffer(GL_ARRAY_BUFFER, skyVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(float), (void*)0); glEnableVertexAttribArray(0);
 
+    unsigned int fbo; glGenFramebuffers(1, &fbo); glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    unsigned int texColorBuffer; glGenTextures(1, &texColorBuffer);
+    glBindTexture(GL_TEXTURE_2D, texColorBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texColorBuffer, 0);
+    unsigned int rbo; glGenRenderbuffers(1, &rbo); glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, SCR_WIDTH, SCR_HEIGHT);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+    if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) printf("FBO Error!\n");
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     unsigned int cubeTexture = loadTexture("res/textures/container.jpg");
-    char* faces[] = {
-        "res/textures/skybox/right.jpg", "res/textures/skybox/left.jpg",
-        "res/textures/skybox/top.jpg",   "res/textures/skybox/bottom.jpg",
-        "res/textures/skybox/front.jpg", "res/textures/skybox/back.jpg"
-    };
+    unsigned int normalMap = loadTexture("res/textures/normal_map.png");
+    char* faces[] = {"res/textures/skybox/right.jpg", "res/textures/skybox/left.jpg", "res/textures/skybox/top.jpg", "res/textures/skybox/bottom.jpg", "res/textures/skybox/front.jpg", "res/textures/skybox/back.jpg"};
     unsigned int cubemapTexture = loadCubemap(faces);
 
     glUseProgram(cubeProg);
     glUniform1i(glGetUniformLocation(cubeProg, "texture1"), 0);
-    glUseProgram(skyProgram);
-    glUniform1i(glGetUniformLocation(skyProgram, "skybox"), 0);
+    glUniform1i(glGetUniformLocation(cubeProg, "normalMap"), 1);
+    glUniform1i(glGetUniformLocation(cubeProg, "skybox"), 2);
+    glUseProgram(skyProg); glUniform1i(glGetUniformLocation(skyProg, "skybox"), 0);
+    glUseProgram(screenProg); glUniform1i(glGetUniformLocation(screenProg, "screenTexture"), 0);
 
     while (!glfwWindowShouldClose(window)) {
-        processInput(window);
         if(!animating) {
-            if(shuffling) {
-                if(shuffle_moves>0) {
-                    trigger("xyz"[rand()%3], rand()%3-1, (rand()%2)*2-1, 1);
-                    shuffle_moves--; animation_speed=20;
-                } else {
-                    shuffling=0; animation_speed=9; game_state = 2; start_time = glfwGetTime();
-                }
-            } else if(solving && history_count>0) {
-                Move m = history[--history_count]; trigger(m.axis, m.layer, -m.dir, 0); animation_speed=20;
-            } else {
-                solving=0;
-                if(game_state == 2 && history_count == 0) { game_state = 0; final_time = glfwGetTime() - start_time; }
-            }
+            if(shuffling) { if(shuffle_moves>0) { trigger("xyz"[rand()%3], rand()%3-1, (rand()%2)*2-1, 1); shuffle_moves--; animation_speed=20; } else { shuffling=0; animation_speed=9; game_state=2; start_time=glfwGetTime(); } }
+            else if(solving && history_count>0) { Move m = history[--history_count]; trigger(m.axis, m.layer, -m.dir, 0); animation_speed=20; }
+            else { solving=0; if(game_state==2 && history_count==0) { game_state=0; final_time = glfwGetTime()-start_time; } }
         }
-        updateTitle(window);
+        if(animating) { anim_angle+=animation_speed; if(anim_angle>=90) { rotate_layer_fixed(anim_axis, anim_layer, glm_rad(90*anim_dir)); animating=0; } }
 
-        if(animating) {
-            anim_angle += animation_speed;
-            if(anim_angle>=90) { rotate_layer_fixed(anim_axis, anim_layer, glm_rad(90*anim_dir)); animating=0; }
-        }
-
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glEnable(GL_DEPTH_TEST);
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         mat4 view, proj; glm_mat4_identity(view); glm_mat4_identity(proj);
-        vec3 camPos = {0,0,cam_dist};
         mat4 camRot; glm_mat4_identity(camRot);
-        glm_rotate(camRot, glm_rad(cube_pitch), (vec3){1,0,0});
-        glm_rotate(camRot, glm_rad(cube_yaw), (vec3){0,1,0});
+        glm_rotate(camRot, glm_rad(cube_pitch), (vec3){1,0,0}); glm_rotate(camRot, glm_rad(cube_yaw), (vec3){0,1,0});
         vec4 rCamPos; glm_mat4_mulv(camRot, (vec4){0,0,cam_dist,1}, rCamPos);
         glm_lookat((vec3){rCamPos[0],rCamPos[1],rCamPos[2]}, (vec3){0,0,0}, (vec3){0,1,0}, view);
         glm_perspective(glm_rad(45.0f), (float)SCR_WIDTH/SCR_HEIGHT, 0.1f, 100.0f, proj);
@@ -428,11 +326,18 @@ int main() {
         glUseProgram(cubeProg);
         glUniformMatrix4fv(glGetUniformLocation(cubeProg, "view"), 1, GL_FALSE, (float*)view);
         glUniformMatrix4fv(glGetUniformLocation(cubeProg, "projection"), 1, GL_FALSE, (float*)proj);
-        glUniform3f(glGetUniformLocation(cubeProg, "lightPos"), 20.0f, 50.0f, 20.0f);
-        glUniform3f(glGetUniformLocation(cubeProg, "viewPos"), rCamPos[0], rCamPos[1], rCamPos[2]);
 
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, cubeTexture);
+        float timeVal = (float)glfwGetTime();
+        float lightRadius = 15.0f;
+        float lightX = sin(timeVal) * lightRadius;
+        float lightZ = cos(timeVal) * lightRadius;
+        float lightY = 10.0f;
+
+        glUniform3f(glGetUniformLocation(cubeProg, "lightPos"), lightX, lightY, lightZ);        glUniform3f(glGetUniformLocation(cubeProg, "viewPos"), rCamPos[0], rCamPos[1], rCamPos[2]);
+
+        glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, cubeTexture);
+        glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, normalMap);
+        glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
         glBindVertexArray(cubeVAO);
 
         for(int x=0; x<3; x++) for(int y=0; y<3; y++) for(int z=0; z<3; z++) {
@@ -458,23 +363,23 @@ int main() {
             }
         }
 
-        glDepthFunc(GL_LEQUAL);
-        glUseProgram(skyProgram);
-        mat4 viewNoTrans; glm_mat4_copy(view, viewNoTrans);
-        viewNoTrans[3][0]=0; viewNoTrans[3][1]=0; viewNoTrans[3][2]=0;
-        glUniformMatrix4fv(glGetUniformLocation(skyProgram, "view"), 1, GL_FALSE, (float*)viewNoTrans);
-        glUniformMatrix4fv(glGetUniformLocation(skyProgram, "projection"), 1, GL_FALSE, (float*)proj);
+        glDepthFunc(GL_LEQUAL); glUseProgram(skyProg);
+        mat4 viewNoTrans; glm_mat4_copy(view, viewNoTrans); viewNoTrans[3][0]=0; viewNoTrans[3][1]=0; viewNoTrans[3][2]=0;
+        glUniformMatrix4fv(glGetUniformLocation(skyProg, "view"), 1, GL_FALSE, (float*)viewNoTrans);
+        glUniformMatrix4fv(glGetUniformLocation(skyProg, "projection"), 1, GL_FALSE, (float*)proj);
+        glBindVertexArray(skyVAO); glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+        glDrawArrays(GL_TRIANGLES, 0, 36); glDepthFunc(GL_LESS);
 
-        glBindVertexArray(skyVAO);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        glDepthFunc(GL_LESS);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDisable(GL_DEPTH_TEST);
+        glClearColor(1,1,1,1); glClear(GL_COLOR_BUFFER_BIT);
+        glUseProgram(screenProg);
+        glBindVertexArray(quadVAO);
+        glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, texColorBuffer);
+        glUniform1i(glGetUniformLocation(screenProg, "effectType"), postProcessEffect);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
 
         glfwSwapBuffers(window); glfwPollEvents();
     }
-
-    ma_engine_uninit(&audio_engine);
-
-    glfwTerminate(); return 0;
+    ma_engine_uninit(&audio_engine); glfwTerminate(); return 0;
 }
