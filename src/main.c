@@ -21,7 +21,7 @@ double current_time = 0.0;
 double final_time = 0.0;
 int game_state = 0;
 int total_moves = 0;
-int postProcessEffect = 0; // 0 = Normal, 1 = Inversion, 2 = Vignette, 3 = Grayscale
+int postProcessEffect = 0;
 
 ma_engine audio_engine;
 
